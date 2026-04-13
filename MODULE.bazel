@@ -1,0 +1,16 @@
+bazel_dep(name = "rules_rust", version = "0.69.0")
+
+crate = use_extension("@rules_rust//crate_universe:extensions.bzl", "crate")
+
+crate.spec(
+    package = "reqwest",
+    version = "0.12",
+    features = ["json", "blocking"],
+)
+crate.spec(
+    package = "scraper",
+    version = "0.19",
+)
+
+crate.from_specs()
+use_repo(crate, "crates")
