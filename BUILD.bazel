@@ -1,11 +1,12 @@
 load("@rules_rust//rust:defs.bzl", "rust_binary")
 
 rust_binary(
-    name = "hello_workspace",
+    name = "crawl",
     srcs = ["src/main.rs"],
     edition = "2021",
     deps = [
         "@crates//:reqwest",
         "@crates//:scraper",
+        "@crates//:url",
     ],
 )
