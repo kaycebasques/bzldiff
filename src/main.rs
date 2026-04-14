@@ -145,8 +145,7 @@ fn process_page(dir: &Path, url: &str, data_dir: &Path, failed_paths: &mut Vec<S
     match response {
         Ok(resp) => {
             let status = resp.status().as_u16().to_string();
-            let old_file = dir.join("old.txt");
-            fs::write(old_file, &status)?;
+
             
             // Check on new site (NEW_URL)
             let new_url = url.replace(OLD_URL, NEW_URL);
@@ -158,8 +157,7 @@ fn process_page(dir: &Path, url: &str, data_dir: &Path, failed_paths: &mut Vec<S
                     "Error".to_string()
                 }
             };
-            let new_file = dir.join("new.txt");
-            fs::write(new_file, &new_status)?;
+
 
             if status == "200" {
                 if new_status == "200" {
