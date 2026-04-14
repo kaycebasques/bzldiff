@@ -15,6 +15,5 @@ crate.spec(
     package = "url",
     version = "2.5",
 )
-
 crate.from_specs()
 use_repo(crate, "crates")
