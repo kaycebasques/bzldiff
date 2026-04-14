@@ -4,7 +4,8 @@ use std::fs;
 use std::path::Path;
 use url::Url;
 
-const START_URL: &str = "https://technicalwriting.dev";
+const OLD_URL: &str = "https://bazel.build";
+const NEW_URL: &str = "https://preview.bazel.build";
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Starting crawler...");
@@ -23,76 +24,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("Initializing queue with homepage...");
         fs::write(&homepage_done_file, "0")?;
     }
+   
+    // Process homepage first
+    let mut undone_pages = Vec::new();
+    find_undone_pages(&data_dir, &mut undone_pages)?;
     
-    loop {
-        let mut undone_pages = Vec::new();
-        find_undone_pages(&data_dir, &mut undone_pages)?;
-        
-        if undone_pages.is_empty() {
-            println!("No more undone pages. Crawling complete.");
-            break;
-        }
-        
-        println!("Found {} undone pages.", undone_pages.len());
-        
-        // Process the first undone page
-        let current_dir = &undone_pages[0];
-        
-        // Map path back to URL
-        let rel_path = current_dir.strip_prefix(&data_dir)?;
-        let rel_path_str = rel_path.to_str().unwrap();
-        let current_url = if rel_path_str.is_empty() {
-            START_URL.to_string()
-        } else {
-            format!("{}/{}", START_URL, rel_path_str)
-        };
-        
-        println!("Processing {}...", current_url);
-        
-        // Fetch page
-        let response = reqwest::blocking::get(&current_url);
-        
-        match response {
-            Ok(resp) => {
-                let status = resp.status().as_u16().to_string();
-                let prod_file = current_dir.join("prod.txt");
-                
-                println!("Writing status {} to {}", status, prod_file.display());
-                fs::write(prod_file, status)?;
-                
-                let html = resp.text()?;
-                let links = extract_links(&html, &current_url)?;
-                
-                for link in links {
-                    if should_process_link(&link) {
-                        let url = Url::parse(&link)?;
-                        let path = url.path();
-                        let rel_link_path = path.trim_start_matches('/');
-                        let target_dir = data_dir.join(rel_link_path);
-                        
-                        let done_file = target_dir.join("done.txt");
-                        if !done_file.exists() {
-                            println!("Found new link: {}. Queuing...", link);
-                            fs::create_dir_all(&target_dir)?;
-                            fs::write(done_file, "0")?;
-                        }
-                    }
-                }
-                
-                // Mark current page as done
-                fs::write(current_dir.join("done.txt"), "1")?;
-            }
-            Err(e) => {
-                eprintln!("Failed to fetch '{}': {}", current_url, e);
-                // Mark as done with error to avoid infinite loop
-                println!("Marking failed page as done to avoid infinite loop.");
-                fs::write(current_dir.join("done.txt"), "1")?;
-            }
-        }
+    if let Some(homepage_dir) = undone_pages.first() {
+        let homepage_url = path_to_url(homepage_dir, &data_dir)?;
+        println!("Processing homepage: {}", homepage_url);
+        process_page(homepage_dir, &homepage_url, &data_dir)?;
     }
     
-    println!("All crawled URLs:");
-    print_all_urls(&data_dir, &data_dir, START_URL)?;
+    // Now process links found on homepage
+    let mut homepage_links = Vec::new();
+    find_undone_pages(&data_dir, &mut homepage_links)?;
+    
+    println!("Found {} links on homepage to check.", homepage_links.len());
+    
+    for dir in homepage_links {
+        let url = path_to_url(&dir, &data_dir)?;
+        check_link_existence(&dir, &url)?;
+    }
+    
+    println!("Finished checking homepage links. Exiting as requested.");
+    
+
     
     Ok(())
 }
@@ -131,7 +87,7 @@ fn should_process_link(url_str: &str) -> bool {
         Err(_) => return false,
     };
     
-    let mut base_url = Url::parse(START_URL).unwrap();
+    let mut base_url = Url::parse(OLD_URL).unwrap();
     
     url.set_fragment(None);
     base_url.set_fragment(None);
@@ -169,23 +125,113 @@ fn find_undone_pages(dir: &Path, results: &mut Vec<std::path::PathBuf>) -> Resul
     Ok(())
 }
 
-fn print_all_urls(dir: &Path, data_dir: &Path, start_url: &str) -> Result<(), Box<dyn std::error::Error>> {
-    if dir.is_dir() {
-        for entry in fs::read_dir(dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.is_dir() {
-                print_all_urls(&path, data_dir, start_url)?;
-            } else if path.file_name().and_then(|s| s.to_str()) == Some("done.txt") {
-                let rel_path = dir.strip_prefix(data_dir)?;
-                let rel_path_str = rel_path.to_str().unwrap();
-                let url = if rel_path_str.is_empty() {
-                    start_url.to_string()
-                } else {
-                    format!("{}/{}", start_url, rel_path_str)
-                };
-                println!("{}", url);
+
+
+fn path_to_url(path: &Path, data_dir: &Path) -> Result<String, Box<dyn std::error::Error>> {
+    let rel_path = path.strip_prefix(data_dir)?;
+    let rel_path_str = rel_path.to_str().unwrap();
+    if rel_path_str.is_empty() {
+        Ok(OLD_URL.to_string())
+    } else {
+        Ok(format!("{}/{}", OLD_URL, rel_path_str))
+    }
+}
+
+fn queue_link(link: &str, data_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let url = Url::parse(link)?;
+    let path = url.path();
+    let rel_link_path = path.trim_start_matches('/');
+    let target_dir = data_dir.join(rel_link_path);
+    
+    let done_file = target_dir.join("done.txt");
+    if !done_file.exists() {
+        println!("Found new link: {}. Queuing...", link);
+        fs::create_dir_all(&target_dir)?;
+        fs::write(done_file, "0")?;
+    }
+    Ok(())
+}
+
+fn process_page(dir: &Path, url: &str, data_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    println!("Processing {}...", url);
+    let response = reqwest::blocking::get(url);
+    
+    match response {
+        Ok(resp) => {
+            let status = resp.status().as_u16().to_string();
+            let old_file = dir.join("old.txt");
+            
+            println!("Writing status {} to {}", status, old_file.display());
+            fs::write(old_file, status)?;
+            
+            // Check on new site (NEW_URL)
+            let new_url = url.replace(OLD_URL, NEW_URL);
+            println!("Checking new site: {}...", new_url);
+            let new_resp = reqwest::blocking::get(&new_url);
+            let new_status = match new_resp {
+                Ok(r) => r.status().as_u16().to_string(),
+                Err(e) => {
+                    eprintln!("Failed to fetch from new site '{}': {}", new_url, e);
+                    "Error".to_string()
+                }
+            };
+            let new_file = dir.join("new.txt");
+            println!("Writing status {} to {}", new_status, new_file.display());
+            fs::write(new_file, new_status)?;
+
+            let html = resp.text()?;
+            let links = extract_links(&html, url)?;
+            
+            for link in links {
+                if should_process_link(&link) {
+                    queue_link(&link, data_dir)?;
+                }
             }
+            
+            fs::write(dir.join("done.txt"), "1")?;
+        }
+        Err(e) => {
+            eprintln!("Failed to fetch '{}': {}", url, e);
+            println!("Marking failed page as done to avoid infinite loop.");
+            fs::write(dir.join("done.txt"), "1")?;
+        }
+    }
+    Ok(())
+}
+
+fn check_link_existence(dir: &Path, url: &str) -> Result<(), Box<dyn std::error::Error>> {
+    println!("Checking existence of {}...", url);
+    let response = reqwest::blocking::get(url);
+    
+    match response {
+        Ok(resp) => {
+            let status = resp.status().as_u16().to_string();
+            let old_file = dir.join("old.txt");
+            
+            println!("Writing status {} to {}", status, old_file.display());
+            fs::write(old_file, status)?;
+            
+            // Check on new site (NEW_URL)
+            let new_url = url.replace(OLD_URL, NEW_URL);
+            println!("Checking new site: {}...", new_url);
+            let new_resp = reqwest::blocking::get(&new_url);
+            let new_status = match new_resp {
+                Ok(r) => r.status().as_u16().to_string(),
+                Err(e) => {
+                    eprintln!("Failed to fetch from new site '{}': {}", new_url, e);
+                    "Error".to_string()
+                }
+            };
+            let new_file = dir.join("new.txt");
+            println!("Writing status {} to {}", new_status, new_file.display());
+            fs::write(new_file, new_status)?;
+
+            fs::write(dir.join("done.txt"), "1")?;
+        }
+        Err(e) => {
+            eprintln!("Failed to fetch '{}': {}", url, e);
+            println!("Marking failed page as done to avoid infinite loop.");
+            fs::write(dir.join("done.txt"), "1")?;
         }
     }
     Ok(())
