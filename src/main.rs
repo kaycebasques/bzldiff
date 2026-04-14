@@ -8,20 +8,20 @@ const OLD_URL: &str = "https://bazel.build";
 const NEW_URL: &str = "https://preview.bazel.build";
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("Starting crawler...");
+
     
     let workspace_dir = env::var("BUILD_WORKSPACE_DIRECTORY")
         .expect("BUILD_WORKSPACE_DIRECTORY not set. Run with 'bazel run'");
     let data_dir = Path::new(&workspace_dir).join("data");
     
-    println!("Data directory: {}", data_dir.display());
+
     
     // Ensure data directory exists
     fs::create_dir_all(&data_dir)?;
     
     let homepage_done_file = data_dir.join("done.txt");
     if !homepage_done_file.exists() {
-        println!("Initializing queue with homepage...");
+
         fs::write(&homepage_done_file, "0")?;
     }
    
@@ -31,7 +31,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     if let Some(homepage_dir) = undone_pages.first() {
         let homepage_url = path_to_url(homepage_dir, &data_dir)?;
-        println!("Processing homepage: {}", homepage_url);
+
         process_page(homepage_dir, &homepage_url, &data_dir)?;
     }
     
@@ -39,14 +39,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut homepage_links = Vec::new();
     find_undone_pages(&data_dir, &mut homepage_links)?;
     
-    println!("Found {} links on homepage to check.", homepage_links.len());
+
     
     for dir in homepage_links {
         let url = path_to_url(&dir, &data_dir)?;
         check_link_existence(&dir, &url)?;
     }
     
-    println!("Finished checking homepage links. Exiting as requested.");
+
     
 
     
@@ -145,7 +145,7 @@ fn queue_link(link: &str, data_dir: &Path) -> Result<(), Box<dyn std::error::Err
     
     let done_file = target_dir.join("done.txt");
     if !done_file.exists() {
-        println!("Found new link: {}. Queuing...", link);
+
         fs::create_dir_all(&target_dir)?;
         fs::write(done_file, "0")?;
     }
@@ -153,7 +153,7 @@ fn queue_link(link: &str, data_dir: &Path) -> Result<(), Box<dyn std::error::Err
 }
 
 fn process_page(dir: &Path, url: &str, data_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    println!("Processing {}...", url);
+
     let response = reqwest::blocking::get(url);
     
     match response {
@@ -161,12 +161,12 @@ fn process_page(dir: &Path, url: &str, data_dir: &Path) -> Result<(), Box<dyn st
             let status = resp.status().as_u16().to_string();
             let old_file = dir.join("old.txt");
             
-            println!("Writing status {} to {}", status, old_file.display());
+
             fs::write(old_file, status)?;
             
             // Check on new site (NEW_URL)
             let new_url = url.replace(OLD_URL, NEW_URL);
-            println!("Checking new site: {}...", new_url);
+
             let new_resp = reqwest::blocking::get(&new_url);
             let new_status = match new_resp {
                 Ok(r) => r.status().as_u16().to_string(),
@@ -176,7 +176,7 @@ fn process_page(dir: &Path, url: &str, data_dir: &Path) -> Result<(), Box<dyn st
                 }
             };
             let new_file = dir.join("new.txt");
-            println!("Writing status {} to {}", new_status, new_file.display());
+
             fs::write(new_file, new_status)?;
 
             let html = resp.text()?;
@@ -192,7 +192,7 @@ fn process_page(dir: &Path, url: &str, data_dir: &Path) -> Result<(), Box<dyn st
         }
         Err(e) => {
             eprintln!("Failed to fetch '{}': {}", url, e);
-            println!("Marking failed page as done to avoid infinite loop.");
+
             fs::write(dir.join("done.txt"), "1")?;
         }
     }
@@ -200,7 +200,7 @@ fn process_page(dir: &Path, url: &str, data_dir: &Path) -> Result<(), Box<dyn st
 }
 
 fn check_link_existence(dir: &Path, url: &str) -> Result<(), Box<dyn std::error::Error>> {
-    println!("Checking existence of {}...", url);
+
     let response = reqwest::blocking::get(url);
     
     match response {
@@ -208,12 +208,12 @@ fn check_link_existence(dir: &Path, url: &str) -> Result<(), Box<dyn std::error:
             let status = resp.status().as_u16().to_string();
             let old_file = dir.join("old.txt");
             
-            println!("Writing status {} to {}", status, old_file.display());
+
             fs::write(old_file, status)?;
             
             // Check on new site (NEW_URL)
             let new_url = url.replace(OLD_URL, NEW_URL);
-            println!("Checking new site: {}...", new_url);
+
             let new_resp = reqwest::blocking::get(&new_url);
             let new_status = match new_resp {
                 Ok(r) => r.status().as_u16().to_string(),
@@ -223,14 +223,14 @@ fn check_link_existence(dir: &Path, url: &str) -> Result<(), Box<dyn std::error:
                 }
             };
             let new_file = dir.join("new.txt");
-            println!("Writing status {} to {}", new_status, new_file.display());
+
             fs::write(new_file, new_status)?;
 
             fs::write(dir.join("done.txt"), "1")?;
         }
         Err(e) => {
             eprintln!("Failed to fetch '{}': {}", url, e);
-            println!("Marking failed page as done to avoid infinite loop.");
+
             fs::write(dir.join("done.txt"), "1")?;
         }
     }
